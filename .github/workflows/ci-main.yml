@@ -64,8 +64,8 @@ jobs:
           tags: |
             ${{ steps.vars.outputs.IMAGE_SHA }}
             ${{ steps.vars.outputs.IMAGE_BRANCH }}
-          cache-from: type=registry,ref=${REGISTRY}/${PROJECT}/${APP_NAME}:buildcache
-          cache-to: type=registry,ref=${REGISTRY}/${PROJECT}/${APP_NAME}:buildcache,mode=max
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.PROJECT }}/${{ env.APP_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.PROJECT }}/${{ env.APP_NAME }}:buildcache,mode=max
       
       - name: Clean up Docker images
         if: always()
