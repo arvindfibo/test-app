@@ -1,0 +1,83 @@
+name: Build & Push to Harbor (NO deploy yet)
+
+# This workflow builds and pushes Docker images to Harbor
+# It does NOT deploy to Kubernetes (that will be handled by Argo CD later)
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to build"
+        required: true
+        default: "main"
+
+jobs:
+  build-and-push:
+    # Use self-hosted runner with these labels (matches RunnerDeployment)
+    runs-on:
+      - self-hosted
+      - linux
+      - k3s
+      - ci
+      - test-app
+
+    env:
+      REGISTRY: ${{ secrets.HARBOR_REGISTRY }}
+      PROJECT:  ${{ secrets.HARBOR_PROJECT }}
+      APP_NAME: test-app
+
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Set image tags
+        id: vars
+        run: |
+          GIT_SHA="${GITHUB_SHA::7}"
+          IMAGE_SHA="${REGISTRY}/${PROJECT}/${APP_NAME}:${GIT_SHA}"
+          IMAGE_BRANCH="${REGISTRY}/${PROJECT}/${APP_NAME}:${{ github.event.inputs.branch }}"
+          echo "IMAGE_SHA=${IMAGE_SHA}" >> $GITHUB_OUTPUT
+          echo "IMAGE_BRANCH=${IMAGE_BRANCH}" >> $GITHUB_OUTPUT
+          echo "======================================"
+          echo "Image tags:"
+          echo "  SHA:    ${IMAGE_SHA}"
+          echo "  Branch: ${IMAGE_BRANCH}"
+          echo "======================================"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.vars.outputs.IMAGE_SHA }}
+            ${{ steps.vars.outputs.IMAGE_BRANCH }}
+          cache-from: type=registry,ref=${REGISTRY}/${PROJECT}/${APP_NAME}:buildcache
+          cache-to: type=registry,ref=${REGISTRY}/${PROJECT}/${APP_NAME}:buildcache,mode=max
+      
+      - name: Clean up Docker images
+        if: always()
+        run: |
+          docker image prune -af --filter "until=24h" || true
+
+      - name: Summary
+        run: |
+          echo "======================================"
+          echo "✅ Image pushed successfully"
+          echo "======================================"
+          echo "SHA tag:    ${{ steps.vars.outputs.IMAGE_SHA }}"
+          echo "Branch tag: ${{ steps.vars.outputs.IMAGE_BRANCH }}"
+          echo "======================================"
+
